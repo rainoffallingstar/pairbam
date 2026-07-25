@@ -3,7 +3,7 @@ package bamnative
 import (
 	"io"
 
-	driver "github.com/rainoffallingstar/bamdriver-go/pkg/bamnative"
+	driver "github.com/rainoffallingstar/bamdriver/pkg/bamnative"
 )
 
 var (

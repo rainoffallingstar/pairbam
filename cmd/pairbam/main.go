@@ -1,4 +1,4 @@
-// Command paireads retains complete primary mate groups or read names shared by two BAMs.
+// Command pairbam retains complete primary mate groups or read names shared by two BAMs.
 // It replaces the legacy samtools/Picard filtering workflow while preserving explicit mode semantics.
 package main
 
@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	bamnative "github.com/rainoffallingstar/Paireads/bamnative"
+	bamnative "github.com/rainoffallingstar/pairbam/bamnative"
 )
 
 var Version = "0.1.0"
@@ -26,7 +26,7 @@ func run(arguments []string) error {
 	for _, argument := range arguments {
 		switch argument {
 		case "--version", "-V":
-			fmt.Printf("paireads %s\n", Version)
+			fmt.Printf("pairbam %s\n", Version)
 			return nil
 		case "--help", "-h":
 			printUsage()
@@ -64,8 +64,8 @@ func run(arguments []string) error {
 
 func printUsage() {
 	fmt.Println("Usage:")
-	fmt.Println("  Single BAM mode:  paireads [--coord-sort] <input.bam> <output.bam>")
-	fmt.Println("  Dual BAM mode:    paireads [--coord-sort] <R1.bam> <R2.bam> <output_prefix>")
+	fmt.Println("  Single BAM mode:  pairbam [--coord-sort] <input.bam> <output.bam>")
+	fmt.Println("  Dual BAM mode:    pairbam [--coord-sort] <R1.bam> <R2.bam> <output_prefix>")
 	fmt.Println()
 	fmt.Println("Flags:")
 	fmt.Println("  --coord-sort    Coordinate-sort the output BAM and create a BAI index.")
@@ -119,7 +119,7 @@ func runSingleBAMMode(bamPath, outputPath string, coordinateSort bool) error {
 	fmt.Printf("  Input: %s\n", bamPath)
 	fmt.Printf("  Output: %s\n", outputPath)
 
-	temporaryDirectory, err := os.MkdirTemp("", "paireads-single-*")
+	temporaryDirectory, err := os.MkdirTemp("", "pairbam-single-*")
 	if err != nil {
 		return fmt.Errorf("create temporary directory: %w", err)
 	}
@@ -227,7 +227,7 @@ func runDualBAMMode(r1Path, r2Path, outputPrefix string, coordinateSort bool) er
 	fmt.Printf("  R2: %s\n", r2Path)
 	fmt.Printf("  Output prefix: %s\n", outputPrefix)
 
-	temporaryDirectory, err := os.MkdirTemp("", "paireads-dual-*")
+	temporaryDirectory, err := os.MkdirTemp("", "pairbam-dual-*")
 	if err != nil {
 		return fmt.Errorf("create temporary directory: %w", err)
 	}
@@ -418,7 +418,7 @@ func sortBAM(inputPath, outputPath string, coordinateSort bool) error {
 	if err := bamnative.Sort(inputPath, &bamnative.SortOptions{
 		OutputPath:         outputPath,
 		ByName:             !coordinateSort,
-		MemoryLimitBytes:   paireadsSortMemoryLimitBytes,
+		MemoryLimitBytes:   pairbamSortMemoryLimitBytes,
 		TemporaryDirectory: filepath.Dir(outputPath),
 	}); err != nil {
 		if coordinateSort {

@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	bamnative "github.com/rainoffallingstar/Paireads/bamnative"
+	bamnative "github.com/rainoffallingstar/pairbam/bamnative"
 )
 
-const paireadsSortMemoryLimitBytes = int64(64 << 20)
+const pairbamSortMemoryLimitBytes = int64(64 << 20)
 
 type primaryNameGroup struct {
 	name    string
@@ -43,7 +43,7 @@ func prepareNameSortedInput(inputPath, temporaryDirectory, label string) (string
 	if err := bamnative.Sort(inputPath, &bamnative.SortOptions{
 		OutputPath:         outputPath,
 		ByName:             true,
-		MemoryLimitBytes:   paireadsSortMemoryLimitBytes,
+		MemoryLimitBytes:   pairbamSortMemoryLimitBytes,
 		TemporaryDirectory: temporaryDirectory,
 	}); err != nil {
 		return "", fmt.Errorf("name-sort %s BAM: %w", label, err)
@@ -52,7 +52,7 @@ func prepareNameSortedInput(inputPath, temporaryDirectory, label string) (string
 }
 
 func streamSingleNameGroups(nameSortedPath, rawOutputPath, filteredNamesPath string) (singleStreamResult, error) {
-	inputFile, reader, err := openPaireadsBAMReader(nameSortedPath)
+	inputFile, reader, err := openPairbamBAMReader(nameSortedPath)
 	if err != nil {
 		return singleStreamResult{}, err
 	}
@@ -137,12 +137,12 @@ func streamDualNameGroups(
 	rawR2OutputPath,
 	filteredNamesPath string,
 ) (dualStreamResult, error) {
-	r1File, r1Reader, err := openPaireadsBAMReader(r1NameSortedPath)
+	r1File, r1Reader, err := openPairbamBAMReader(r1NameSortedPath)
 	if err != nil {
 		return dualStreamResult{}, fmt.Errorf("open name-sorted R1 BAM: %w", err)
 	}
 	defer r1File.Close()
-	r2File, r2Reader, err := openPaireadsBAMReader(r2NameSortedPath)
+	r2File, r2Reader, err := openPairbamBAMReader(r2NameSortedPath)
 	if err != nil {
 		return dualStreamResult{}, fmt.Errorf("open name-sorted R2 BAM: %w", err)
 	}
@@ -255,7 +255,7 @@ func streamDualNameGroups(
 	return result, nil
 }
 
-func openPaireadsBAMReader(path string) (*os.File, *bamnative.Reader, error) {
+func openPairbamBAMReader(path string) (*os.File, *bamnative.Reader, error) {
 	inputFile, err := os.Open(path)
 	if err != nil {
 		return nil, nil, err

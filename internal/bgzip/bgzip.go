@@ -3,7 +3,7 @@ package bgzip
 import (
 	"io"
 
-	driver "github.com/rainoffallingstar/bamdriver-go/pkg/bgzip"
+	driver "github.com/rainoffallingstar/bamdriver/pkg/bgzip"
 )
 
 var (

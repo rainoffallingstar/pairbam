@@ -1,4 +1,4 @@
-name: Paireads CI
+name: pairbam CI
 
 on:
   push:
@@ -36,20 +36,20 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y samtools
 
-      - name: Build paireads
+      - name: Build pairbam
         run: |
-          CGO_ENABLED=0 go build -o ./paireads ./cmd/paireads
+          CGO_ENABLED=0 go build -o ./pairbam ./cmd/pairbam
 
       - name: Generate test BAM
         run: |
-          cat > "$RUNNER_TEMP/gen_paireads_input.go" <<'EOF'
+          cat > "$RUNNER_TEMP/gen_pairbam_input.go" <<'EOF'
           package main
 
           import (
           	"log"
           	"os"
 
-            bamnative "github.com/rainoffallingstar/Paireads/bamnative"
+            bamnative "github.com/rainoffallingstar/pairbam/bamnative"
           )
 
           func main() {
@@ -105,7 +105,7 @@ jobs:
           	}
           }
           EOF
-          go run "$RUNNER_TEMP/gen_paireads_input.go" "$RUNNER_TEMP/input.bam"
+          go run "$RUNNER_TEMP/gen_pairbam_input.go" "$RUNNER_TEMP/input.bam"
 
       - name: BAM compatibility gate
         run: |
@@ -117,7 +117,7 @@ jobs:
           samtools view -H "$IN_BAM" >/dev/null
           samtools view -c "$IN_BAM" >/dev/null
 
-          ./paireads --coord-sort "$IN_BAM" "$OUT_BAM"
+          ./pairbam --coord-sort "$IN_BAM" "$OUT_BAM"
 
           test -f "$OUT_BAM"
           test -f "$OUT_BAM.bai"

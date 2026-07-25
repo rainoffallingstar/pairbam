@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	bamnative "github.com/rainoffallingstar/Paireads/bamnative"
+	bamnative "github.com/rainoffallingstar/pairbam/bamnative"
 )
 
 func TestPrintUsage_NoError(t *testing.T) {
@@ -260,16 +260,16 @@ func TestRunSingleBAMModeStreamsCompletePrimaryMateGroups(t *testing.T) {
 	rootDirectory := t.TempDir()
 	inputPath := filepath.Join(rootDirectory, "input.bam")
 	outputPath := filepath.Join(rootDirectory, "output.bam")
-	writePaireadsFixtureBAM(t, inputPath, []*bamnative.Record{
-		newPaireadsFixtureRecord("incomplete", bamnative.FlagPaired|bamnative.FlagFirstInPair, 300),
-		newPaireadsFixtureRecord("complete", bamnative.FlagPaired|bamnative.FlagSecondInPair, 200),
-		newPaireadsFixtureRecord("complete", bamnative.FlagPaired|bamnative.FlagFirstInPair, 100),
+	writePairbamFixtureBAM(t, inputPath, []*bamnative.Record{
+		newPairbamFixtureRecord("incomplete", bamnative.FlagPaired|bamnative.FlagFirstInPair, 300),
+		newPairbamFixtureRecord("complete", bamnative.FlagPaired|bamnative.FlagSecondInPair, 200),
+		newPairbamFixtureRecord("complete", bamnative.FlagPaired|bamnative.FlagFirstInPair, 100),
 	})
 
 	if err := runSingleBAMMode(inputPath, outputPath, false); err != nil {
 		t.Fatalf("single BAM mode failed: %v", err)
 	}
-	outputNames := readPaireadsFixtureNames(t, outputPath)
+	outputNames := readPairbamFixtureNames(t, outputPath)
 	if strings.Join(outputNames, ",") != "complete,complete" {
 		t.Fatalf("single output names = %v, want complete pair", outputNames)
 	}
@@ -286,9 +286,9 @@ func TestRunSingleBAMModeRemovesStaleIndexForNameSortedOutput(t *testing.T) {
 	rootDirectory := t.TempDir()
 	inputPath := filepath.Join(rootDirectory, "input.bam")
 	outputPath := filepath.Join(rootDirectory, "output.bam")
-	writePaireadsFixtureBAM(t, inputPath, []*bamnative.Record{
-		newPaireadsFixtureRecord("complete", bamnative.FlagPaired|bamnative.FlagFirstInPair, 100),
-		newPaireadsFixtureRecord("complete", bamnative.FlagPaired|bamnative.FlagSecondInPair, 200),
+	writePairbamFixtureBAM(t, inputPath, []*bamnative.Record{
+		newPairbamFixtureRecord("complete", bamnative.FlagPaired|bamnative.FlagFirstInPair, 100),
+		newPairbamFixtureRecord("complete", bamnative.FlagPaired|bamnative.FlagSecondInPair, 200),
 	})
 	if err := os.WriteFile(outputPath+".bai", []byte("stale index"), 0o600); err != nil {
 		t.Fatalf("write stale index: %v", err)
@@ -306,14 +306,14 @@ func TestRunSingleBAMModeSupportsEmptyFilteredOutput(t *testing.T) {
 	rootDirectory := t.TempDir()
 	inputPath := filepath.Join(rootDirectory, "input.bam")
 	outputPath := filepath.Join(rootDirectory, "output.bam")
-	writePaireadsFixtureBAM(t, inputPath, []*bamnative.Record{
-		newPaireadsFixtureRecord("incomplete", bamnative.FlagPaired|bamnative.FlagFirstInPair, 100),
+	writePairbamFixtureBAM(t, inputPath, []*bamnative.Record{
+		newPairbamFixtureRecord("incomplete", bamnative.FlagPaired|bamnative.FlagFirstInPair, 100),
 	})
 
 	if err := runSingleBAMMode(inputPath, outputPath, false); err != nil {
 		t.Fatalf("single BAM empty-output mode failed: %v", err)
 	}
-	if outputNames := readPaireadsFixtureNames(t, outputPath); len(outputNames) != 0 {
+	if outputNames := readPairbamFixtureNames(t, outputPath); len(outputNames) != 0 {
 		t.Fatalf("empty filtered output contains records: %v", outputNames)
 	}
 }
@@ -323,22 +323,22 @@ func TestRunDualBAMModeStreamsMatchedNamesWithoutClaimingProperPair(t *testing.T
 	r1Path := filepath.Join(rootDirectory, "r1.bam")
 	r2Path := filepath.Join(rootDirectory, "r2.bam")
 	outputPrefix := filepath.Join(rootDirectory, "matched")
-	writePaireadsFixtureBAM(t, r1Path, []*bamnative.Record{
-		newPaireadsFixtureRecord("r1-only", 0, 300),
-		newPaireadsFixtureRecord("shared", 0, 100),
+	writePairbamFixtureBAM(t, r1Path, []*bamnative.Record{
+		newPairbamFixtureRecord("r1-only", 0, 300),
+		newPairbamFixtureRecord("shared", 0, 100),
 	})
-	writePaireadsFixtureBAM(t, r2Path, []*bamnative.Record{
-		newPaireadsFixtureRecord("r2-only", 0, 400),
-		newPaireadsFixtureRecord("shared", 0, 200),
+	writePairbamFixtureBAM(t, r2Path, []*bamnative.Record{
+		newPairbamFixtureRecord("r2-only", 0, 400),
+		newPairbamFixtureRecord("shared", 0, 200),
 	})
 
 	if err := runDualBAMMode(r1Path, r2Path, outputPrefix, false); err != nil {
 		t.Fatalf("dual BAM mode failed: %v", err)
 	}
-	if names := readPaireadsFixtureNames(t, outputPrefix+"_R1.bam"); strings.Join(names, ",") != "shared" {
+	if names := readPairbamFixtureNames(t, outputPrefix+"_R1.bam"); strings.Join(names, ",") != "shared" {
 		t.Fatalf("R1 matched output names = %v, want shared", names)
 	}
-	if names := readPaireadsFixtureNames(t, outputPrefix+"_R2.bam"); strings.Join(names, ",") != "shared" {
+	if names := readPairbamFixtureNames(t, outputPrefix+"_R2.bam"); strings.Join(names, ",") != "shared" {
 		t.Fatalf("R2 matched output names = %v, want shared", names)
 	}
 	filteredNames, err := os.ReadFile(outputPrefix + "_filtered_readnames.txt")
@@ -354,12 +354,12 @@ func TestRunDualBAMModeRejectsDuplicatePrimaryNameOnEitherSide(t *testing.T) {
 	rootDirectory := t.TempDir()
 	r1Path := filepath.Join(rootDirectory, "r1.bam")
 	r2Path := filepath.Join(rootDirectory, "r2.bam")
-	writePaireadsFixtureBAM(t, r1Path, []*bamnative.Record{
-		newPaireadsFixtureRecord("duplicate", 0, 100),
-		newPaireadsFixtureRecord("duplicate", 0, 200),
+	writePairbamFixtureBAM(t, r1Path, []*bamnative.Record{
+		newPairbamFixtureRecord("duplicate", 0, 100),
+		newPairbamFixtureRecord("duplicate", 0, 200),
 	})
-	writePaireadsFixtureBAM(t, r2Path, []*bamnative.Record{
-		newPaireadsFixtureRecord("other", 0, 300),
+	writePairbamFixtureBAM(t, r2Path, []*bamnative.Record{
+		newPairbamFixtureRecord("other", 0, 300),
 	})
 
 	err := runDualBAMMode(r1Path, r2Path, filepath.Join(rootDirectory, "matched"), false)
@@ -368,7 +368,7 @@ func TestRunDualBAMModeRejectsDuplicatePrimaryNameOnEitherSide(t *testing.T) {
 	}
 }
 
-func writePaireadsFixtureBAM(t *testing.T, path string, records []*bamnative.Record) {
+func writePairbamFixtureBAM(t *testing.T, path string, records []*bamnative.Record) {
 	t.Helper()
 	header := &bamnative.Header{
 		SortOrder:  "coordinate",
@@ -389,7 +389,7 @@ func writePaireadsFixtureBAM(t *testing.T, path string, records []*bamnative.Rec
 	}
 }
 
-func newPaireadsFixtureRecord(name string, flags uint16, position int32) *bamnative.Record {
+func newPairbamFixtureRecord(name string, flags uint16, position int32) *bamnative.Record {
 	return &bamnative.Record{
 		Name:      name,
 		Flags:     flags,
@@ -404,7 +404,7 @@ func newPaireadsFixtureRecord(name string, flags uint16, position int32) *bamnat
 	}
 }
 
-func readPaireadsFixtureNames(t *testing.T, path string) []string {
+func readPairbamFixtureNames(t *testing.T, path string) []string {
 	t.Helper()
 	inputFile, err := os.Open(path)
 	if err != nil {

@@ -1,4 +1,4 @@
-# 🔀 paireads
+# 🔀 pairbam
 
 > A pure Go tool for filtering paired-end BAM reads - no external dependencies required!
 
@@ -15,21 +15,21 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/rainoffallingstar/paireads.git
-cd paireads
+git clone https://github.com/rainoffallingstar/pairbam.git
+cd pairbam
 
 # Build the tool
-go build -o paireads ./cmd/paireads
+go build -o pairbam ./cmd/pairbam
 ```
 
 ## 🎯 Usage
 
 ```bash
 # Single merged BAM: retain complete unique primary R1/R2 mate groups
-paireads [--coord-sort] <input.bam> <output.bam>
+pairbam [--coord-sort] <input.bam> <output.bam>
 
 # Separate BAMs: retain unique primary mapped names present in both files
-paireads [--coord-sort] <R1.bam> <R2.bam> <output_prefix>
+pairbam [--coord-sort] <R1.bam> <R2.bam> <output_prefix>
 ```
 
 Without `--coord-sort`, BAM outputs are query-name sorted and no BAI is produced. With `--coord-sort`, BAM outputs are coordinate-sorted and indexed.
@@ -37,7 +37,7 @@ Without `--coord-sort`, BAM outputs are query-name sorted and no BAI is produced
 ### Example
 
 ```bash
-paireads --coord-sort input_R1.bam input_R2.bam filtered
+pairbam --coord-sort input_R1.bam input_R2.bam filtered
 ```
 
 This will generate:
@@ -52,7 +52,7 @@ filtered_filtered_readnames.txt  # Names present in only one input
 
 ## 📋 What It Does
 
-`paireads` replaces the traditional samtools/picard workflow:
+`pairbam` replaces the traditional samtools/picard workflow:
 
 ```bash
 # ❌ Old way (multiple tools)
@@ -62,7 +62,7 @@ picard SortSam I=R1_filtered.bam O=R1_sorted.bam SORT_ORDER=coordinate
 picard BuildBamIndex I=R1_sorted.bam
 
 # ✅ New way (one tool)
-paireads R1.bam R2.bam filtered
+pairbam R1.bam R2.bam filtered
 ```
 
 ## 🔄 Workflow
@@ -142,7 +142,7 @@ The tool uses primary mapped records to decide eligibility and writes only those
 ### Dependencies
 
 ```go
-require github.com/rainoffallingstar/bamdriver-go v0.1.2-0.20260721055359-a22f77784fc4
+require github.com/rainoffallingstar/bamdriver v0.1.2-0.20260721055359-a22f77784fc4
 ```
 
 ## 🧪 Testing
@@ -158,7 +158,7 @@ Create test data with overlapping reads:
 Run the tool:
 
 ```bash
-paireads test_R1.bam test_R2.bam test_output
+pairbam test_R1.bam test_R2.bam test_output
 ```
 
 Expected output:
@@ -168,9 +168,9 @@ Expected output:
 ## 📁 Project Structure
 
 ```
-paireads/
+pairbam/
 ├── cmd/
-│   └── paireads/
+│   └── pairbam/
 │       └── main.go           # CLI application
 ├── bamnative/
 │   ├── bamnative.go          # BAM reader/writer
