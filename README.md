@@ -42,9 +42,22 @@ The filtered-name file records names that were not shared between the two inputs
 
 ## Gate B reproducibility check
 
-The repository includes a fixture-based mate-integrity workflow at `.github/workflows/gate-b.yml`. It downloads the revision-pinned real RNA-PDX `SRR30880970` merged BAM from `fallingstar10/otter-data`, verifies its SHA-256, runs complete-primary-mate filtering with `--coord-sort`, and validates the output with Samtools supplied by `enva`.
+The repository includes a fixture-based mate-integrity workflow at `.github/workflows/gate-b.yml`. It runs four cells against one immutable revision of `fallingstar10/otter-data`, verifying each BAM against the published `provenance/checksums.sha256` manifest, running complete-primary-mate filtering with `--coord-sort`, and validating the output with Samtools supplied by `enva`:
 
-The acceptance contract is deliberately narrow: 20,000 unique read names, exactly one primary R1 and one primary R2 record per retained name, 40,000 output records, no secondary/supplementary/unmapped retained records, and no filtered names for this complete fixture. This is fragment/mate preservation evidence; it is not a claim that read-name intersection alone proves SAM `proper pair`. Reports, logs, BAM/BAI outputs, SAM snapshots, and tool-version evidence are uploaded as an Actions artifact, including when a preceding step fails.
+| Cell | Fixture | Input | Fragments | Output |
+|---|---|---|---|---|
+| `rna-pdx` | RNA-PDX graft `SRR30880970` (hg38) | 51,140 records | 20,000 | 40,000 records |
+| `bs-pdx-graft` | BS-PDX Note 4 50% cell, Bismark hg19 graft | 525,922 records | 262,961 | 525,922 records |
+| `bs-pdx-host` | BS-PDX Note 4 50% cell, Bismark mm10 host | 208,812 records | 104,406 | 208,812 records |
+| `bs-pdx-incomplete` | the same graft, with 7 seeded-random read names reduced to one record | 525,915 records | 262,954 | 525,908 records |
+
+The acceptance contract is deliberately narrow: exactly one primary R1 and one primary R2 record per retained read name, no secondary/supplementary/unmapped retained records, no read name rejected as incomplete or ambiguous, and the exact input/output record counts above. The RNA-PDX input carries supplementary alignments, so it also exercises the drop-non-primary path; both BS-PDX cells are clean all-primary inputs, so they assert exact pass-through of a bisulfite-aligned graft and host BAM. This is fragment/mate preservation evidence; it is not a claim that read-name intersection alone proves SAM `proper pair`. Reports, logs, BAM/BAI outputs, SAM snapshots, and tool-version evidence are uploaded per cell as an Actions artifact, including when a preceding step fails.
+
+### Incomplete-mate negative control
+
+The three fixtures above are clean, so `filtered_readnames.txt` is empty for every one of them and the rejection path is never exercised. `scripts/gate-b/make-incomplete-fixture.py` closes that gap: it derives a perturbed copy of the BS-PDX graft in which a seeded random selection of read-name groups keeps an odd number of records — its first record in the fixture's own shuffled record order — instead of the full mate pair. Taking an odd number of reads per name is exactly what makes a fragment incomplete, and because the selection is seeded the perturbation is reproducible.
+
+The workflow then asserts the negative control end to end: the perturbation is real (exactly 7 names carry an odd record count and the record total drops by 7), `pairbam` rejects precisely those 7 names and no others, the filtered list is sorted, and the retained 262,954 fragments still satisfy the full positive contract. A cell that silently stopped perturbing the fixture, or a `pairbam` change that stopped reporting incomplete names, fails the job.
 
 ## Install
 

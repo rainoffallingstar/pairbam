@@ -1,5 +1,25 @@
 name: Pairbam Gate B
 
+# Gate B checks complete-primary-mate preservation on real PDX BAM fixtures. Each cell pins one
+# immutable fixture revision, verifies the BAM against the published checksum manifest, runs
+# `pairbam --coord-sort`, and asserts that the surviving output holds exactly one primary first
+# mate and one primary second mate per fragment, with no unmapped, secondary, or supplementary
+# records.
+#
+# Cells:
+#   rna-pdx          - RNA-PDX graft (SRR30880970, hg38); the input also carries supplementary
+#                      records, so this cell exercises the drop-non-primary path.
+#   bs-pdx-graft     - BS-PDX human graft of the Note 4 50% cell (Bismark hg19); a clean
+#                      all-primary input, so this cell asserts exact pass-through.
+#   bs-pdx-host      - BS-PDX mouse host of the same cell (Bismark mm10); the same pass-through
+#                      contract on an independent BAM.
+#   bs-pdx-incomplete - the BS-PDX graft with a seeded random selection of read-name groups
+#                      reduced to an odd record count, so `filtered_readnames.txt` must list
+#                      exactly those names. Every other cell asserts an empty filter list, so
+#                      this negative control is what actually exercises the rejection path.
+#
+# Every expected count below was measured against the pinned fixture revision.
+
 on:
   push:
     branches: [main, master]
@@ -10,20 +30,56 @@ on:
 permissions:
   contents: read
 
+env:
+  FIXTURE_BASE_URL: https://huggingface.co/datasets/fallingstar10/otter-data/resolve/0b0c627cb0fdb2394577bb9c6cdc969646ed668f
+
 jobs:
   real-bam-pair-integrity:
-    name: RNA-PDX primary mate preservation
+    name: Gate B ${{ matrix.cell }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    env:
-      FIXTURE_BASE_URL: https://huggingface.co/datasets/fallingstar10/otter-data/resolve/55ac167ba0f0d4ac120639e9c28b4204277cd27a
-      FIXTURE_DIRECTORY: ci-artifacts/fixture/pairbam/gate-b/rna-pdx-srr30880970/hg38
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - cell: rna-pdx
+            fixture_directory: ci-artifacts/fixture/pairbam/gate-b/rna-pdx-srr30880970/hg38
+            dataset_path: pairbam/gate-b/rna-pdx-srr30880970/hg38/input.bam
+            incomplete_fragments: '0'
+            seed: '0'
+            expected_input_records: '51140'
+            expected_output_records: '40000'
+            expected_fragments: '20000'
+          - cell: bs-pdx-graft
+            fixture_directory: ci-artifacts/fixture/xenofilx/mixture/bs-pdx/human0p5-replicate1/graft
+            dataset_path: xenofilx/mixture/bs-pdx/human0p5-replicate1/graft.hg19.bam
+            incomplete_fragments: '0'
+            seed: '0'
+            expected_input_records: '525922'
+            expected_output_records: '525922'
+            expected_fragments: '262961'
+          - cell: bs-pdx-host
+            fixture_directory: ci-artifacts/fixture/xenofilx/mixture/bs-pdx/human0p5-replicate1/host
+            dataset_path: xenofilx/mixture/bs-pdx/human0p5-replicate1/host.mm10.bam
+            incomplete_fragments: '0'
+            seed: '0'
+            expected_input_records: '208812'
+            expected_output_records: '208812'
+            expected_fragments: '104406'
+          - cell: bs-pdx-incomplete
+            fixture_directory: ci-artifacts/fixture/xenofilx/mixture/bs-pdx/human0p5-replicate1/graft-incomplete
+            dataset_path: xenofilx/mixture/bs-pdx/human0p5-replicate1/graft.hg19.bam
+            incomplete_fragments: '7'
+            seed: '20260914'
+            expected_input_records: '525915'
+            expected_output_records: '525908'
+            expected_fragments: '262954'
     steps:
       - name: Checkout pairbam
         uses: actions/checkout@v4
 
       - name: Prepare Gate B evidence directory
-        run: mkdir -p ci-artifacts/{enva,fixture,gate-b,provenance}
+        run: mkdir -p "${{ matrix.fixture_directory }}" ci-artifacts/{enva,gate-b,provenance}
 
       - name: Checkout pinned enva source
         uses: actions/checkout@v4
@@ -74,27 +130,50 @@ jobs:
             2>&1 | tee ci-artifacts/enva/samtools-version.log
           grep -q '^samtools 1.15.1' ci-artifacts/enva/samtools-version.log
 
-      - name: Download and verify real RNA-PDX BAM fixture
+      - name: Download and verify the pinned BAM fixture
         run: |
           set -euo pipefail
-          mkdir -p "$FIXTURE_DIRECTORY"
-          curl --fail --location --silent --show-error \
+          curl --fail --location --silent --show-error --retry 5 \
             "$FIXTURE_BASE_URL/provenance/checksums.sha256" \
             --output ci-artifacts/provenance/checksums.sha256
-          curl --fail --location --silent --show-error \
-            "$FIXTURE_BASE_URL/pairbam/gate-b/rna-pdx-srr30880970/hg38/input.bam" \
-            --output "$FIXTURE_DIRECTORY/input.bam"
-          awk -v bam="$FIXTURE_DIRECTORY/input.bam" '
-            $2 ~ /pairbam\/gate-b\/rna-pdx-srr30880970\/hg38\/input\.bam$/ { $2 = bam; print }
+          curl --fail --location --silent --show-error --retry 5 \
+            "$FIXTURE_BASE_URL/${{ matrix.dataset_path }}" \
+            --output "${{ matrix.fixture_directory }}/input.bam"
+          awk -v dataset_path="${{ matrix.dataset_path }}" -v bam="${{ matrix.fixture_directory }}/input.bam" '
+            $2 == dataset_path { $2 = bam; print }
           ' ci-artifacts/provenance/checksums.sha256 \
             > ci-artifacts/provenance/input-checksum.sha256
+          test -s ci-artifacts/provenance/input-checksum.sha256
+          grep -q "${{ matrix.dataset_path }}" ci-artifacts/provenance/checksums.sha256
           sha256sum --check ci-artifacts/provenance/input-checksum.sha256
+          cp "${{ matrix.fixture_directory }}/input.bam" \
+            "$GITHUB_WORKSPACE/ci-artifacts/gate-b/pairbam-input.bam"
+
+      - name: Manufacture the incomplete-mate negative control
+        if: matrix.incomplete_fragments != '0'
+        run: |
+          set -euo pipefail
+          samtools_path="$(.ci/enva/target/release/enva run --name pairbam-gate-b \
+            --command 'command -v samtools' | tail -n 1)"
+          test -n "$samtools_path"
+          # Run the perturbation with the host Python and hand it the environment's samtools,
+          # so the helper never depends on what the Samtools environment happens to ship.
+          python3 scripts/gate-b/make-incomplete-fixture.py \
+            --input-bam "$GITHUB_WORKSPACE/${{ matrix.fixture_directory }}/input.bam" \
+            --output-bam "$GITHUB_WORKSPACE/ci-artifacts/gate-b/pairbam-input.bam" \
+            --manifest "$GITHUB_WORKSPACE/ci-artifacts/gate-b/incomplete-manifest.json" \
+            --selected-names "$GITHUB_WORKSPACE/ci-artifacts/gate-b/expected-incomplete-names.txt" \
+            --samtools "$samtools_path" \
+            --incomplete-fragments ${{ matrix.incomplete_fragments }} \
+            --seed ${{ matrix.seed }} \
+            2>&1 | tee ci-artifacts/gate-b/incomplete-fixture.log
+          test -s ci-artifacts/gate-b/expected-incomplete-names.txt
 
       - name: Run pairbam complete-mate filtering
         run: |
           set -euo pipefail
           ci-artifacts/pairbam --coord-sort \
-            "$FIXTURE_DIRECTORY/input.bam" \
+            "$GITHUB_WORKSPACE/ci-artifacts/gate-b/pairbam-input.bam" \
             ci-artifacts/gate-b/output.bam \
             2>&1 | tee ci-artifacts/gate-b/pairbam.log
 
@@ -103,18 +182,60 @@ jobs:
           set -euo pipefail
           .ci/enva/target/release/enva run \
             --name pairbam-gate-b \
-            --command 'samtools quickcheck -v ci-artifacts/fixture/pairbam/gate-b/rna-pdx-srr30880970/hg38/input.bam ci-artifacts/gate-b/output.bam && samtools view -c ci-artifacts/fixture/pairbam/gate-b/rna-pdx-srr30880970/hg38/input.bam > ci-artifacts/gate-b/input-record-count.txt && samtools view -c ci-artifacts/gate-b/output.bam > ci-artifacts/gate-b/output-record-count.txt && samtools view ci-artifacts/gate-b/output.bam > ci-artifacts/gate-b/output.sam.tsv && samtools idxstats ci-artifacts/gate-b/output.bam > ci-artifacts/gate-b/output.idxstats.tsv' \
+            --command "samtools quickcheck -v '$GITHUB_WORKSPACE/ci-artifacts/gate-b/pairbam-input.bam' '$GITHUB_WORKSPACE/ci-artifacts/gate-b/output.bam' && samtools view -c '$GITHUB_WORKSPACE/ci-artifacts/gate-b/pairbam-input.bam' > ci-artifacts/gate-b/input-record-count.txt && samtools view -c '$GITHUB_WORKSPACE/ci-artifacts/gate-b/output.bam' > ci-artifacts/gate-b/output-record-count.txt && samtools view '$GITHUB_WORKSPACE/ci-artifacts/gate-b/output.bam' > ci-artifacts/gate-b/output.sam.tsv && samtools idxstats '$GITHUB_WORKSPACE/ci-artifacts/gate-b/output.bam' > ci-artifacts/gate-b/output.idxstats.tsv" \
             2>&1 | tee ci-artifacts/gate-b/samtools-validation.log
 
       - name: Assert complete primary mate and fragment contract
         run: |
           python3 - <<'PY'
+          import json
           from collections import defaultdict
           from pathlib import Path
 
-          filtered_names = Path('ci-artifacts/gate-b/output_filtered_readnames.txt')
-          if filtered_names.read_text():
-              raise AssertionError('real acceptance fixture unexpectedly filtered read names')
+          expected_input_records = int('${{ matrix.expected_input_records }}')
+          expected_output_records = int('${{ matrix.expected_output_records }}')
+          expected_fragments = int('${{ matrix.expected_fragments }}')
+          incomplete_fragments = int('${{ matrix.incomplete_fragments }}')
+          cell = '${{ matrix.cell }}'
+
+          filtered_names_path = Path('ci-artifacts/gate-b/output_filtered_readnames.txt')
+          filtered_names = [line for line in filtered_names_path.read_text().splitlines() if line]
+
+          if incomplete_fragments == 0:
+              # A clean acceptance fixture: no read name may be rejected.
+              if filtered_names:
+                  raise AssertionError(
+                      f'{cell}: fixture unexpectedly filtered read names: {filtered_names[:5]}'
+                  )
+          else:
+              # Negative control: the perturbed names must be reported, and only those names.
+              manifest = json.loads(
+                  Path('ci-artifacts/gate-b/incomplete-manifest.json').read_text()
+              )
+              expected_incomplete_names = sorted(manifest['incomplete_read_names'])
+              if len(expected_incomplete_names) != incomplete_fragments:
+                  raise AssertionError(
+                      f'{cell}: perturbation selected {len(expected_incomplete_names)} names, '
+                      f'expected {incomplete_fragments}'
+                  )
+              if manifest['input_records'] - manifest['output_records'] != incomplete_fragments:
+                  raise AssertionError(
+                      f'{cell}: perturbation removed '
+                      f"{manifest['input_records'] - manifest['output_records']} records, "
+                      f'expected {incomplete_fragments}'
+                  )
+              if sorted(filtered_names) != expected_incomplete_names:
+                  missing = sorted(set(expected_incomplete_names) - set(filtered_names))
+                  unexpected = sorted(set(filtered_names) - set(expected_incomplete_names))
+                  raise AssertionError(
+                      f'{cell}: pairbam rejected {len(filtered_names)} names; '
+                      f'not rejected: {missing[:5]}; unexpectedly rejected: {unexpected[:5]}'
+                  )
+              if filtered_names != sorted(filtered_names):
+                  raise AssertionError(f'{cell}: filtered read names are not sorted')
+              print(
+                  f'{cell}: pairbam rejected exactly the {incomplete_fragments} perturbed read names'
+              )
 
           records_by_name = defaultdict(list)
           sam_text = Path('ci-artifacts/gate-b/output.sam.tsv').read_text()
@@ -122,19 +243,31 @@ jobs:
               fields = line.split('\t')
               records_by_name[fields[0]].append(int(fields[1]))
 
-          assert len(records_by_name) == 20000
-          assert sum(len(flags) for flags in records_by_name.values()) == 40000
+          assert len(records_by_name) == expected_fragments, (
+              f'{cell}: expected {expected_fragments} fragments, found {len(records_by_name)}'
+          )
+          assert sum(len(flags) for flags in records_by_name.values()) == expected_output_records, (
+              f'{cell}: expected {expected_output_records} output records'
+          )
           for read_name, flags in records_by_name.items():
-              assert len(flags) == 2, (read_name, flags)
-              assert sum(bool(flag & 64) for flag in flags) == 1, (read_name, flags)
-              assert sum(bool(flag & 128) for flag in flags) == 1, (read_name, flags)
-              assert all(not flag & 4 for flag in flags), (read_name, flags)
-              assert all(not flag & 256 for flag in flags), (read_name, flags)
-              assert all(not flag & 2048 for flag in flags), (read_name, flags)
+              assert len(flags) == 2, (cell, read_name, flags)
+              assert sum(bool(flag & 64) for flag in flags) == 1, (cell, read_name, flags)
+              assert sum(bool(flag & 128) for flag in flags) == 1, (cell, read_name, flags)
+              assert all(not flag & 4 for flag in flags), (cell, read_name, flags)
+              assert all(not flag & 256 for flag in flags), (cell, read_name, flags)
+              assert all(not flag & 2048 for flag in flags), (cell, read_name, flags)
 
-          assert int(Path('ci-artifacts/gate-b/input-record-count.txt').read_text()) == 51140
-          assert int(Path('ci-artifacts/gate-b/output-record-count.txt').read_text()) == 40000
-          print('Gate B complete-primary-mate contract passed for 20,000 fragments')
+          assert int(Path('ci-artifacts/gate-b/input-record-count.txt').read_text()) == expected_input_records, (
+              f'{cell}: expected {expected_input_records} input records'
+          )
+          assert int(Path('ci-artifacts/gate-b/output-record-count.txt').read_text()) == expected_output_records, (
+              f'{cell}: expected {expected_output_records} output records'
+          )
+          print(
+              f'Gate B complete-primary-mate contract passed for {cell}: '
+              f'{expected_fragments} fragments, {expected_input_records} -> '
+              f'{expected_output_records} records'
+          )
           PY
 
       - name: Remove Gate B environment through enva
@@ -151,7 +284,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pairbam-gate-b-rna-pdx-evidence
+          name: pairbam-gate-b-${{ matrix.cell }}-evidence
           path: ci-artifacts/
           if-no-files-found: warn
           retention-days: 90
