@@ -40,6 +40,12 @@ filtered_filtered_readnames.txt
 
 The filtered-name file records names that were not shared between the two inputs. Publication is staged transactionally so partial BAM/BAI output is not presented as a completed result.
 
+## Gate B reproducibility check
+
+The repository includes a fixture-based mate-integrity workflow at `.github/workflows/gate-b.yml`. It downloads the revision-pinned real RNA-PDX `SRR30880970` merged BAM from `fallingstar10/otter-data`, verifies its SHA-256, runs complete-primary-mate filtering with `--coord-sort`, and validates the output with Samtools supplied by `enva`.
+
+The acceptance contract is deliberately narrow: 20,000 unique read names, exactly one primary R1 and one primary R2 record per retained name, 40,000 output records, no secondary/supplementary/unmapped retained records, and no filtered names for this complete fixture. This is fragment/mate preservation evidence; it is not a claim that read-name intersection alone proves SAM `proper pair`. Reports, logs, BAM/BAI outputs, SAM snapshots, and tool-version evidence are uploaded as an Actions artifact, including when a preceding step fails.
+
 ## Install
 
 ```bash
