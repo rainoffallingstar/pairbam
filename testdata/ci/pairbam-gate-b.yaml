@@ -1,0 +1,6 @@
+name: pairbam-gate-b
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - samtools=1.15.1

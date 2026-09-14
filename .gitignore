@@ -23,7 +23,9 @@ vendor/
 *.sam
 
 # Test data
-testdata/
+testdata/*
+!testdata/ci/
+!testdata/ci/*.yaml
 test_*.bam
 test_*.txt
 

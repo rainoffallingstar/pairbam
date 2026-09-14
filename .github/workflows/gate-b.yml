@@ -1,0 +1,157 @@
+name: Pairbam Gate B
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-bam-pair-integrity:
+    name: RNA-PDX primary mate preservation
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      FIXTURE_BASE_URL: https://huggingface.co/datasets/fallingstar10/otter-data/resolve/55ac167ba0f0d4ac120639e9c28b4204277cd27a
+      FIXTURE_DIRECTORY: ci-artifacts/fixture/pairbam/gate-b/rna-pdx-srr30880970/hg38
+      RATTLER_CACHE_DIR: ${{ runner.temp }}/rattler-cache
+    steps:
+      - name: Checkout pairbam
+        uses: actions/checkout@v4
+
+      - name: Prepare Gate B evidence directory
+        run: mkdir -p ci-artifacts/{enva,fixture,gate-b,provenance}
+
+      - name: Checkout pinned enva source
+        uses: actions/checkout@v4
+        with:
+          repository: rainoffallingstar/enva
+          ref: d93b7fc7c82593dcaffa56f28b50aad02cca1108
+          path: .ci/enva
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run pairbam quality gates
+        run: |
+          set -euo pipefail
+          go test -count=1 ./... 2>&1 | tee ci-artifacts/gate-b/go-test.log
+          go vet ./... 2>&1 | tee ci-artifacts/gate-b/go-vet.log
+
+      - name: Build pairbam and enva
+        run: |
+          set -euo pipefail
+          go build -o ci-artifacts/pairbam ./cmd/pairbam
+          (
+            cd .ci/enva
+            cargo build --release --locked --bin enva
+          ) 2>&1 | tee ci-artifacts/enva/build.log
+
+      - name: Create fixed Samtools environment through enva
+        run: |
+          set -euo pipefail
+          mkdir -p "$RATTLER_CACHE_DIR"
+          .ci/enva/target/release/enva create \
+            --yaml testdata/ci/pairbam-gate-b.yaml \
+            --name pairbam-gate-b \
+            --force \
+            --clean-cache \
+            --output summary \
+            2>&1 | tee ci-artifacts/enva/create.log
+          .ci/enva/target/release/enva run \
+            --name pairbam-gate-b \
+            --command 'samtools --version | head -n 1' \
+            2>&1 | tee ci-artifacts/enva/samtools-version.log
+          grep -q '^samtools 1.15.1' ci-artifacts/enva/samtools-version.log
+
+      - name: Download and verify real RNA-PDX BAM fixture
+        run: |
+          set -euo pipefail
+          mkdir -p "$FIXTURE_DIRECTORY"
+          curl --fail --location --silent --show-error \
+            "$FIXTURE_BASE_URL/provenance/checksums.sha256" \
+            --output ci-artifacts/provenance/checksums.sha256
+          curl --fail --location --silent --show-error \
+            "$FIXTURE_BASE_URL/pairbam/gate-b/rna-pdx-srr30880970/hg38/input.bam" \
+            --output "$FIXTURE_DIRECTORY/input.bam"
+          awk -v bam="$FIXTURE_DIRECTORY/input.bam" '
+            $2 ~ /pairbam\/gate-b\/rna-pdx-srr30880970\/hg38\/input\.bam$/ { $2 = bam; print }
+          ' ci-artifacts/provenance/checksums.sha256 \
+            > ci-artifacts/provenance/input-checksum.sha256
+          sha256sum --check ci-artifacts/provenance/input-checksum.sha256
+
+      - name: Run pairbam complete-mate filtering
+        run: |
+          set -euo pipefail
+          ci-artifacts/pairbam --coord-sort \
+            "$FIXTURE_DIRECTORY/input.bam" \
+            ci-artifacts/gate-b/output.bam \
+            2>&1 | tee ci-artifacts/gate-b/pairbam.log
+
+      - name: Validate input and output through enva Samtools
+        run: |
+          set -euo pipefail
+          .ci/enva/target/release/enva run \
+            --name pairbam-gate-b \
+            --command 'samtools quickcheck -v ci-artifacts/fixture/pairbam/gate-b/rna-pdx-srr30880970/hg38/input.bam ci-artifacts/gate-b/output.bam && samtools view -c ci-artifacts/fixture/pairbam/gate-b/rna-pdx-srr30880970/hg38/input.bam > ci-artifacts/gate-b/input-record-count.txt && samtools view -c ci-artifacts/gate-b/output.bam > ci-artifacts/gate-b/output-record-count.txt && samtools view ci-artifacts/gate-b/output.bam > ci-artifacts/gate-b/output.sam.tsv && samtools idxstats ci-artifacts/gate-b/output.bam > ci-artifacts/gate-b/output.idxstats.tsv' \
+            2>&1 | tee ci-artifacts/gate-b/samtools-validation.log
+
+      - name: Assert complete primary mate and fragment contract
+        run: |
+          python3 - <<'PY'
+          from collections import defaultdict
+          from pathlib import Path
+
+          filtered_names = Path('ci-artifacts/gate-b/output_filtered_readnames.txt')
+          if filtered_names.read_text():
+              raise AssertionError('real acceptance fixture unexpectedly filtered read names')
+
+          records_by_name = defaultdict(list)
+          sam_text = Path('ci-artifacts/gate-b/output.sam.tsv').read_text()
+          for line in sam_text.splitlines():
+              fields = line.split('\t')
+              records_by_name[fields[0]].append(int(fields[1]))
+
+          assert len(records_by_name) == 20000
+          assert sum(len(flags) for flags in records_by_name.values()) == 40000
+          for read_name, flags in records_by_name.items():
+              assert len(flags) == 2, (read_name, flags)
+              assert sum(bool(flag & 64) for flag in flags) == 1, (read_name, flags)
+              assert sum(bool(flag & 128) for flag in flags) == 1, (read_name, flags)
+              assert all(not flag & 4 for flag in flags), (read_name, flags)
+              assert all(not flag & 256 for flag in flags), (read_name, flags)
+              assert all(not flag & 2048 for flag in flags), (read_name, flags)
+
+          assert int(Path('ci-artifacts/gate-b/input-record-count.txt').read_text()) == 51140
+          assert int(Path('ci-artifacts/gate-b/output-record-count.txt').read_text()) == 40000
+          print('Gate B complete-primary-mate contract passed for 20,000 fragments')
+          PY
+
+      - name: Remove Gate B environment through enva
+        if: always()
+        run: |
+          set -euo pipefail
+          if .ci/enva/target/release/enva validate --name pairbam-gate-b \
+            > ci-artifacts/enva/pre-remove-validate.log 2>&1; then
+            .ci/enva/target/release/enva remove pairbam-gate-b \
+              2>&1 | tee ci-artifacts/enva/remove.log
+          fi
+
+      - name: Upload Gate B evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pairbam-gate-b-rna-pdx-evidence
+          path: ci-artifacts/
+          if-no-files-found: warn
+          retention-days: 90
