@@ -18,7 +18,6 @@ jobs:
     env:
       FIXTURE_BASE_URL: https://huggingface.co/datasets/fallingstar10/otter-data/resolve/55ac167ba0f0d4ac120639e9c28b4204277cd27a
       FIXTURE_DIRECTORY: ci-artifacts/fixture/pairbam/gate-b/rna-pdx-srr30880970/hg38
-      RATTLER_CACHE_DIR: ${{ runner.temp }}/rattler-cache
     steps:
       - name: Checkout pairbam
         uses: actions/checkout@v4
@@ -60,6 +59,7 @@ jobs:
       - name: Create fixed Samtools environment through enva
         run: |
           set -euo pipefail
+          export RATTLER_CACHE_DIR="${RUNNER_TEMP:-/tmp}/rattler-cache"
           mkdir -p "$RATTLER_CACHE_DIR"
           .ci/enva/target/release/enva create \
             --yaml testdata/ci/pairbam-gate-b.yaml \
