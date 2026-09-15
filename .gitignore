@@ -48,3 +48,7 @@ Thumbs.db
 *.temp
 _sorted.bam
 /pairbam
+
+# Python bytecode from the Gate B fixture helper
+__pycache__/
+*.pyc
