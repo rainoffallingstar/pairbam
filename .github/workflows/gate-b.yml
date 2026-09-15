@@ -288,3 +288,36 @@ jobs:
           path: ci-artifacts/
           if-no-files-found: warn
           retention-days: 90
+
+      - name: Job summary
+        if: always()
+        continue-on-error: true
+        run: |
+          rejected="-"
+          filtered_file="ci-artifacts/gate-b/output_filtered_readnames.txt"
+          if [[ -f "${filtered_file}" ]]; then
+            rejected="$(grep -c . "${filtered_file}" || true)"
+          fi
+          fragments="-"
+          records="-"
+          if [[ -f ci-artifacts/gate-b/output-record-count.txt ]]; then
+            records="$(cat ci-artifacts/gate-b/output-record-count.txt)"
+          fi
+          if [[ -f ci-artifacts/gate-b/output.sam.tsv ]]; then
+            fragments="$(cut -f1 ci-artifacts/gate-b/output.sam.tsv | sort -u | wc -l | tr -d ' ')"
+          fi
+          bash scripts/ci/job-summary.sh \
+            --verdict "${{ job.status }}" \
+            --title "pairbam — Gate B mate and fragment integrity" \
+            --scope "${{ matrix.cell }}" \
+            --checked "Filters a real fixture with --coord-sort and asserts that every retained read name holds exactly one primary R1 and one primary R2 record, with no unmapped, secondary or supplementary records retained, and that the rejected-name list matches the declared expectation exactly." \
+            --check "Fragments retained|${{ matrix.expected_fragments }}|${fragments}|-" \
+            --check "Output records|${{ matrix.expected_output_records }}|${records}|-" \
+            --check "Rejected read names|${{ matrix.incomplete_fragments == '0' && 'none (clean acceptance fixture)' || matrix.incomplete_fragments }}|${rejected}|-" \
+            --check "Fixture verified against pinned digest|sha256 matches|see step log|-" \
+            --metric "Fixture|${{ matrix.dataset_path }}" \
+            --metric "Input records|${{ matrix.expected_input_records }}" \
+            --artifact "pairbam-gate-b-${{ matrix.cell }}-evidence" \
+            --limit "${{ matrix.incomplete_fragments == '0' && 'A clean acceptance fixture: this cell asserts exact pass-through and an empty rejection list.' || 'A negative control. A seeded random selection of read-name groups is reduced to an odd number of records so the rejection path is genuinely exercised; the perturbation, not the fixture, is what makes the names incomplete.' }}" \
+            --limit "A shared read name means name intersection; it does not by itself prove SAM FlagProperPair or mate-coordinate correctness." \
+            --note "${{ matrix.incomplete_fragments == '0' && 'The rejection list must be empty for this cell, so a regression that stopped reporting incomplete names would still be caught by the perturbed cell.' || 'Both directions are asserted: the perturbation must be real, and pairbam must reject exactly those names and no others.' }}"
